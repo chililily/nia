@@ -25,18 +25,19 @@ import discord
 from discord import Game
 from discord.ext.commands import Bot
 import sqlite3
-# from GuildConfig import *
 from GuildConfig import *
 from MemberStats import *
 from fuzzywuzzy import process      # fuzzy string matching
 import datetime
 # from Session import *
 from constants import *
+from dotenv import load_dotenv
+import os
 
-TOKEN = 'token_here'
 BOT_PREFIX = ("-")
-client = Bot(command_prefix=BOT_PREFIX,pm_help=None)
+DB_FILE = 'nia-data'
 
+client = Bot(command_prefix=BOT_PREFIX,pm_help=None)
 """
 ==============================================
 UTILITY FUNCTIONS
@@ -538,25 +539,26 @@ async def list_servers():
         await asyncio.sleep(1800)
 
 async def load_db():
-    db = sqlite3.connect('nia_data')
+    db = sqlite3.connect(DB_FILE)
     c = db.cursor()
 
-    # c.execute("CREATE TABLE IF NOT EXISTS guild_configs(gid INT PRIMARY KEY, name TEXT, status_chnl INT, traffic_chnl INT, dailies TEXT, announced_roles TEXT, sa_roles TEXT);")
-    c.execute("CREATE TABLE IF NOT EXISTS guild_configs(gid INT PRIMARY KEY, name TEXT, status_chnl INT, traffic_chnl INT, announced_roles TEXT;")
+    c.execute("CREATE TABLE IF NOT EXISTS guild_configs(gid INT PRIMARY KEY, name TEXT, status_chnl INT, traffic_chnl INT, announced_roles TEXT);")
     c.execute("CREATE TABLE IF NOT EXISTS member_stats(c_id TEXT PRIMARY KEY, server_id TEXT, total INTEGER, chnl_stats TEXT, last_7d TEXT, last_24h TEXT);")
 
-    # Get all rows for servers bot is currently a member of
+    # Get a list of servers bot is currently a member of...
     server_names,server_ids = [],[]
     for server in client.guilds:
         server_names.append(server.name)
         server_ids.append(str(server.id))
 
+    # ...and fetch the configurations for those servers
     c.execute("SELECT * FROM guild_configs WHERE name IN ({})".format(repr(server_names).strip('[]')))
     rows = c.fetchall()
     for row in rows:
         server = discord.utils.get(client.guilds, name=row[0])
         server_configs[row[0]] = GuildConfig.create(server, *row[1:], False)
 
+    # Fetch user statistics for users sharing a server with this bot
     c.execute("SELECT * FROM member_stats WHERE server_id IN ({})".format(repr(server_ids).strip('[]')))
     rows = c.fetchall()
     for row in rows:
@@ -567,47 +569,44 @@ async def load_db():
 async def manage_db():
     await client.wait_until_ready()
 
-    init = True
+    db = await load_db()
+    c = db.cursor()
     while not client.is_closed():
-        if init:
-            db = await load_db()
-            c = db.cursor()
-            init = False
-        else:
-            for server in server_configs:
-                config = server_configs[server]
-                if config.is_dirty:
-                    data = config.flatten()
-                    c.execute("SELECT * FROM guild_configs WHERE name='{}';".format(config.name))
-                    row = c.fetchone()
-                    if row != None:
-                        c.execute("UPDATE guild_configs SET name='{}', status_chnl={}, traffic_chnl={}, daily_chnl={}, announced_roles='{}', sa_roles='{}' WHERE gid={};".format(*data))
-                    else:
-                        c.execute("INSERT INTO guild_configs (gid, status_chnl, traffic_chnl, daily_chnl, roles, sa_roles, name) VALUES (?,?,?,?,?,?);", data)
-            db.commit()
-            for server in server_configs:
-                server_configs[server].is_dirty = False
+        for server in server_configs:
+            config = server_configs[server]
+            if config.is_dirty:
+                data = config.flatten()
+                c.execute("SELECT * FROM guild_configs WHERE name='{}';".format(config.name))
+                row = c.fetchone()
+                if row != None:
+                    c.execute("UPDATE guild_configs SET name='{}', status_chnl={}, traffic_chnl={}, daily_chnl={}, announced_roles='{}', sa_roles='{}' WHERE gid={};".format(*data))
+                else:
+                    c.execute("INSERT INTO guild_configs (gid, status_chnl, traffic_chnl, daily_chnl, roles, sa_roles, name) VALUES (?,?,?,?,?,?);", data)
+        db.commit()
+        for server in server_configs:
+            server_configs[server].is_dirty = False
 
-            for c_id in member_stats:
-                ms = member_stats[c_id]
-                if ms.is_dirty:
-                    data = ms.flatten()
-                    c.execute("SELECT * FROM member_stats WHERE c_id='{}';".format(ms.get_cID()))
-                    row = c.fetchone()
-                    if row != None:
-                        c.execute("UPDATE member_stats SET server_id='{}', total={}, chnl_stats='{}', last_7d='{}', last_24h='{}' WHERE c_id='{}';".format(*data))
-                    else:
-                        c.execute("INSERT INTO member_stats (server_id, total, chnl_stats, last_7d, last_24h, c_id) VALUES (?,?,?,?,?,?);", data)
-            db.commit()
-            for c_id in member_stats:
-                member_stats[c_id].is_dirty = False
+        for c_id in member_stats:
+            ms = member_stats[c_id]
+            if ms.is_dirty:
+                data = ms.flatten()
+                c.execute("SELECT * FROM member_stats WHERE c_id='{}';".format(ms.get_cID()))
+                row = c.fetchone()
+                if row != None:
+                    c.execute("UPDATE member_stats SET server_id='{}', total={}, chnl_stats='{}', last_7d='{}', last_24h='{}' WHERE c_id='{}';".format(*data))
+                else:
+                    c.execute("INSERT INTO member_stats (server_id, total, chnl_stats, last_7d, last_24h, c_id) VALUES (?,?,?,?,?,?);", data)
+        db.commit()
+        for c_id in member_stats:
+            member_stats[c_id].is_dirty = False
 
-            print(datetime.datetime.now().strftime("%H:%M %m-%d-%y")+": Autosaved database.")
-        await asyncio.sleep(60)
+        print(datetime.datetime.now().strftime("%H:%M %m-%d-%y")+": Autosaved database.")
+    await asyncio.sleep(60)
 
 
 server_configs = {}
 member_stats = {}
 client.loop.create_task(list_servers())
 client.loop.create_task(manage_db())
-client.run(TOKEN)
+load_dotenv('.env')
+client.run(os.getenv('TOKEN'))
