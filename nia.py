@@ -33,7 +33,7 @@ import datetime
 # from Session import *
 from constants import *
 
-TOKEN = 'NDUwMjAxMTk4MjYwMTI1Njk2.DevyOw.28nAIa7CZlvlQiLLv9x73d44wm4'
+TOKEN = 'token_here'
 BOT_PREFIX = ("-")
 client = Bot(command_prefix=BOT_PREFIX,pm_help=None)
 
@@ -115,7 +115,7 @@ SERVER CONFIGURATION COMMANDS
 .sconfig status:        Sets the status channel (role update messages).
 .sconfig traffic:       Sets the traffic channel (join/leave messages).
 .sconfig daily:         Sets the daily channel (pinning).
-.sconfig addrole:       Add a role to be announced, with message surrounded by double quotes. Type <user> to have the user be mentioned.
+.sconfig addrole:       Add a role to be announced, with message surrounded by backticks. Type <user> to have the user be mentioned.
 .sconfig delrole:       Deletes a role from announcements.
 """
 @client.command(name='sconfig',
@@ -475,7 +475,7 @@ async def on_member_join(member):
             await client.ban(member)
             return
 
-""" Greets a new member. """
+""" Announces preset message when user obtains an announceable role. """
 @client.event
 async def on_member_update(before,after):
     server = before.guild
